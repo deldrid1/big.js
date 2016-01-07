@@ -1,57 +1,46 @@
 
-# big.js #
+# big.nut #
 
-A small, fast JavaScript library for arbitrary-precision decimal arithmetic.
+This is an Electric Imp Squirrel fork of [big.js](https://github.com/MikeMcl/big.js/) - A small, fast JavaScript library for arbitrary-precision decimal arithmetic.
 
 The little sister to [bignumber.js](https://github.com/MikeMcl/bignumber.js/).
 See also [decimal.js](https://github.com/MikeMcl/decimal.js/), and [here](https://github.com/MikeMcl/big.js/wiki) for the difference between them.
 
 ## Features
 
-  - Faster, smaller and easier-to-use than JavaScript versions of Java's BigDecimal
-  - Only 2.7 KB minified and gzipped
   - Simple API
   - Replicates the `toExponential`, `toFixed` and `toPrecision` methods of JavaScript's Number type
-  - Includes a `sqrt` method
   - Stores values in an accessible decimal floating point format
   - No dependencies
   - Comprehensive [documentation](http://mikemcl.github.io/big.js/) and test set
 
+## Differences from Big.js
+
+  - There are no Class properties - currently everything is an instance property.  This means that Big.DP isn't "sticky" like the Big.js library.
+    - This decision needs to be reviewed.  We also need to make sure things like cloning preserve properties correctly.
+
 ## Load
 
-The library is the single JavaScript file *big.js* (or *big.min.js*, which is *big.js* minified).
-
-It can be loaded via a script tag in an HTML document for the browser
-
-    <script src='./relative/path/to/big.js'></script>
-
-or as a CommonJS, [Node.js](http://nodejs.org) or AMD module using `require`.
-
-    var Big = require('big.js');
-
-For Node.js, the library is available from the npm registry:
-
-    $ npm install big.js
-
+Copy the big.class.nut file into your Electric Imp Agent.
 
 
 ## Use
 
-*In all examples below, `var`, semicolons and `toString` calls are not shown.
+*In all examples below, `local`, semicolons and `toString` calls are not shown.
 If a commented-out value is in quotes it means `toString` has been called on the preceding expression.*
 
 The library exports a single function: Big, the constructor of Big number instances.
 It accepts a value of type Number, String or Big number Object.
 
-    x = new Big(123.4567)
-    y = Big('123456.7e-3')             // 'new' is optional
-    z = new Big(x)
+    x = Big(123.4567)
+    y = Big('123456.7e-3')             
+    z = Big(x)
     x.eq(y) && x.eq(z) && y.eq(z)      // true
 
 A Big number is immutable in the sense that it is not changed by its methods.
 
     0.3 - 0.1                          // 0.19999999999999998
-    x = new Big(0.3)
+    x = Big(0.3)
     x.minus(0.1)                       // "0.2"
     x                                  // "0.3"
 
@@ -77,8 +66,8 @@ The other methods always give the exact result.
     Big.DP = 10
     Big.RM = 1
 
-    x = new Big(2);
-    y = new Big(3);
+    x = Big(2);
+    y = Big(3);
     z = x.div(y)                       // "0.6666666667"
     z.sqrt()                           // "0.8164965809"
     z.pow(-3)                          // "3.3749999995"
@@ -88,7 +77,7 @@ The other methods always give the exact result.
 
 The value of a Big number is stored in a decimal floating point format in terms of a coefficient, exponent and sign.
 
-    x = new Big(-123.456);
+    x = Big(-123.456);
     x.c                                // [1,2,3,4,5,6]    coefficient (i.e. significand)
     x.e                                // 2                exponent
     x.s                                // -1               sign
@@ -99,68 +88,13 @@ For further information see the [API](http://mikemcl.github.io/big.js/) referenc
 
 The *test* directory contains the test scripts for each Big number method.
 
-The tests can be run with Node or a browser.
+The tests can be run inside the imp Agent.
 
-To test a single method, from a command-line shell at the *test* directory, use e.g.
-
-    $ node toFixed
-
-To test all the methods
-
-    $ node every-test
-
-For the browser, see *single-test.html* and *every-test.html* in the *test/browser* directory.
-
-*big-vs-number.html* enables some of the methods of big.js to be compared with those of JavaScript's Number type.
+Be warned - many of the tests must be ran manually because of agent memory limitations.  In the future these tests may be converted to .json files so that the agent can HTTP GET them a chunk at a time.
 
 ## Performance
 
-The *perf* directory contains two applications and a *lib* directory containing the BigDecimal libraries used by both.
-
-*big-vs-bigdecimal.html* tests the performance of big.js against the JavaScript translations of two versions of BigDecimal, its use should be more or less self-explanatory.
-(The GWT version doesn't work in IE 6.)
-
-* GWT: java.math.BigDecimal
-<https://github.com/iriscouch/bigdecimal.js>
-* ICU4J: com.ibm.icu.math.BigDecimal
-<https://github.com/dtrebbien/BigDecimal.js>
-
-The BigDecimal in Node's npm registry is the GWT version. Despite its seeming popularity I have found it to have some serious bugs, see the Node script *perf/lib/bigdecimal_GWT/bugs.js* for examples of flaws in its *remainder*, *divide* and *compareTo* methods.
-
-*bigtime.js* is a Node command-line application which tests the performance of big.js against the GWT version of
-BigDecimal from the npm registry.
-
-For example, to compare the time taken by the big.js `plus` method and the BigDecimal `add` method:
-
-    $ node bigtime plus 10000 40
-
-This will time 10000 calls to each, using operands of up to 40 random digits and will check that the results match.
-
-For help:
-
-    $ node bigtime -h
-
-## Build
-
-I.e. minify.
-
-For Node, if uglify-js is installed globally ( `npm install uglify-js -g` ) then
-
-    uglifyjs -o ./big.min.js ./big.js
-
-will create *big.min.js*.
-
-The *big.min.js* already present was created with *Microsoft Ajax Minifier 5.11*.
-
-## TypeScript
-
-The [DefinitelyTyped](https://github.com/borisyankov/DefinitelyTyped) project has a TypeScript [definitions file](https://github.com/borisyankov/DefinitelyTyped/blob/master/big.js/big.js.d.ts) for big.js.
-
-The definitions file can be added to your project via the [big.js.TypeScript.DefinitelyTyped](https://www.nuget.org/packages/big.js.TypeScript.DefinitelyTyped/0.0.1) NuGet package or via [tsd](http://definitelytyped.org/tsd/).
-
-    tsd query big.js --action install
-
-Any questions about the TypeScript definitions file should be addressed to the DefinitelyTyped project.
+Performance has not yet been tested.  It does generally work though :)
 
 ## Feedback
 
@@ -169,12 +103,6 @@ Feedback is welcome.
 Bugs/comments/questions?
 Open an issue, or email
 
-Michael
-<a href="mailto:M8ch88l@gmail.com">M8ch88l@gmail.com</a>
-
-Bitcoin donation to:
-**1DppGRQSjVSMgGxuygDEHQuWEdTiVEzJYG**
-Thank you
 
 ## Licence
 
@@ -185,6 +113,7 @@ See LICENCE.
 ####3.1.3
 
 * Minor documentation updates.
+* Initial Conversion to Squirrel.
 
 ####3.1.2
 

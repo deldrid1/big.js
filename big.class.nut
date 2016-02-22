@@ -5,6 +5,7 @@
   Copyright (c) 2014 Michael Mclaughlin <M8ch88l@gmail.com>
   MIT Expat Licence
 */
+//TODO: BUG: The full suite of regression tests needs to be reran
 
 //TODO: BUG: Implement metamethods...
 // Available Squirrel Metamethods include the following:
@@ -35,7 +36,7 @@
 class Big {
 
    static isValid = regexp2(@"^-?(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?$");
-   c = null;	//coefficient*	number[]	Array of single digits
+   c = null;	//coefficient*	number[]	Blob (used as a low overhead Array) of single digits
    e = null;	//exponent	number	Integer, -1e+6 to 1e+6 inclusive
    s = null; 	//sign	number	-1 or 1
 
@@ -151,7 +152,9 @@ class Big {
         }
 
         // Append zeros?
-        for (; c.len() < i; c.push(0)) {
+        while(c.len() < i) {
+          _resize(c, c.len()+1)
+          //c[c.len()-1] = 0
         }
         i = x.e;
 
@@ -164,11 +167,7 @@ class Big {
         return toE == 1 || toE && (dp <= i || i <= this.E_NEG) ?
 
           // Exponential notation.
-        (x.s < 0 && c[0] ? "-" : "") +
-            (c.len() > 1 ? c[0] + "." + c.reduce(function(previousValue, currentValue){
-                return (previousValue.tostring() + currentValue.tostring());
-            }).tostring().slice(1) : c[0]) +
-              (i < 0 ? "e" : "e+") + i
+        (x.s < 0 && c[0] ? "-" : "") + (c.len() > 1 ? c[0] + "." + _reduce(c).slice(1) : c[0]) + (i < 0 ? "e" : "e+") + i
 
           // Normal notation.
           : x.toString();
@@ -238,7 +237,7 @@ class Big {
 
             // Zero.
             this.e = 0
-            this.c = [ 0 ];
+            this.c = blob(1);
         } else {
 
             // Determine trailing zeros.
@@ -246,7 +245,7 @@ class Big {
             }
 
             this.e = e - i - 1;
-            this.c = array(nL-i + 1, 0);
+            this.c = blob(nL-i + 1);
 
             // Convert string to array of digits without leading/trailing zeros.
             for (e = 0; i <= nL; this.c[e++] = n[i++].tochar().tointeger()) {
@@ -291,17 +290,18 @@ class Big {
 
                 // 1, 0.1, 0.01, 0.001, 0.0001 etc.
                 this.e = -dp;
-                xc = [1];
+                xc = blob(1)
+                xc[0] = 1;
             } else {
 
                 // Zero.
-                xc = [0];
+                xc = blob(1);
                 this.e = 0;
             }
         } else {
 
             // Remove any digits after the required decimal places.
-            xc = i < xc.len() ? xc.slice(0, i) : xc;
+            xc = i < xc.len() ? _slice(xc, 0, i) : xc;
             i--;
 
             // Round up?
@@ -315,13 +315,13 @@ class Big {
 
                     if (!i--) {
                         ++this.e;
-                        xc.insert(0,1);
+                        _insert(xc, 0,1);
                     }
                 }
             }
 
             // Remove trailing zeros.
-            for (i = xc.len(); --i >= 0 && !xc[i]; xc.pop()) {
+            for (i = xc.len(); --i >= 0 && !xc[i]; _resize(xc, xc.len()-1)) {
             }
         }
 
@@ -341,9 +341,7 @@ class Big {
     }
 
     function _tostring() {
-        return (this.s == 1 ? "+" : "-") + "[" + this.c.reduce(function(previousValue, currentValue){
-                return (previousValue + ", " + currentValue);
-            }) + "]E"+this.e
+        return (this.s == 1 ? "+" : "-") + "[" + _reduce(this.c) + "]E"+this.e
     }
 
 
@@ -418,135 +416,142 @@ class Big {
      * value of Big y, rounded, if necessary, to a maximum of Big.DP decimal
      * places using rounding mode Big.RM.
      */
-    function div(y) {
-        y = Big(y)
-        local x = this,
-            // dividend
-            dvd = x.c,
-            //divisor
-            dvs = y.c,
-            s = x.s == y.s ? 1 : -1,
-            dp = this.DP;
+     function div(y) {
+         y = Big(y)
+         local x = this,
+             // dividend
+             dvd = x.c,
+             //divisor
+             dvs = y.c,
+             s = x.s == y.s ? 1 : -1,
+             dp = this.DP;
 
-        if (dp != ~~dp || dp < 0 || dp > MAX_DP) {
-            throwErr("!Big.DP!");
-        }
+         if (dp != ~~dp || dp < 0 || dp > MAX_DP) {
+             throwErr("!Big.DP!");
+         }
 
-        // Either 0?
-        if (!dvd[0] || !dvs[0]) {
+         // Either 0?
+         if (!dvd[0] || !dvs[0]) {
 
-            // If both are 0, throw NaN
-            if (dvd[0] == dvs[0]) {
-                throwErr("!Big.NaN!");
-            }
+             // If both are 0, throw NaN
+             if (dvd[0] == dvs[0]) {
+                 throwErr("!Big.NaN!");
+             }
 
-            // If dvs is 0, throw +-Infinity.
-            if (!dvs[0]) {
-                throwErr("!Big." + s < 0 ? "-" : "+" + "Infinity");
-            }
+             // If dvs is 0, throw +-Infinity.
+             if (!dvs[0]) {
+                 throwErr("!Big." + s < 0 ? "-" : "+" + "Infinity");
+             }
 
-            // dvd is 0, return +-0.
-            return Big((s < 0 ? "-" : "+") + "0");
-        }
+             // dvd is 0, return +-0.
+             return Big((s < 0 ? "-" : "+") + "0");
+         }
 
-        local dvsL, dvsT, next, cmp, remI,
-            dvsZ = clone(dvs),
-            dvdI = dvs.len(),
-            dvsL = dvs.len(),
-            dvdL = dvd.len(),
-            // remainder
-            rem = dvd.slice(0, dvsL < dvd.len() ? dvsL : dvd.len()),
-            remL = rem.len(),
-            // quotient
-            q = y,
-            qc =  [],
-            qi = 0,
-            digits = dp + (x.e - y.e) + 1;
+         local dvsL, dvsT, next, cmp, remI,
+             dvsZ = clone(dvs),
+             dvdI = dvs.len(),
+             dvsL = dvs.len(),
+             dvdL = dvd.len(),
+             // remainder
+             rem = _slice(dvd, 0, dvsL < dvd.len() ? dvsL : dvd.len()),
+             remL = rem.len(),
+             // quotient
+             q = y,
+             qc =  blob(),
+             qi = 0,
+             digits = dp + (x.e - y.e) + 1;
 
-        q.c = qc
-        q.e = x.e - y.e
-        q.s = s;
-        s = digits < 0 ? 0 : digits;
+         q.c = qc
+         q.e = x.e - y.e
+         q.s = s;
+         s = digits < 0 ? 0 : digits;
 
-        // Create version of divisor with leading zero.
-        dvsZ.insert(0,0);
+         // Create version of divisor with leading zero.
+         _insert(dvsZ, 0,0);
 
-        // Add zeros to make remainder as long as divisor.
-        for (; remL++ < dvsL; rem.push(0)) {
-        }
+         // Add zeros to make remainder as long as divisor.
+         while(remL++ < dvsL){
+           _resize(rem, rem.len()+1)
+           //rem[rem.len()-1] = 0
+         }
 
-        do {
+         do {
+             // 'next' is how many times the divisor goes into current remainder.
+             for (next = 0; next < 10; next++) {
 
-            // 'next' is how many times the divisor goes into current remainder.
-            for (next = 0; next < 10; next++) {
+                 // Compare divisor and remainder.
+                 remL = rem.len()
+                 if (dvsL != remL) {
+                     cmp = dvsL > remL ? 1 : -1;
+                 } else {
 
-                // Compare divisor and remainder.
-                remL = rem.len()
-                if (dvsL != remL) {
-                    cmp = dvsL > remL ? 1 : -1;
-                } else {
+                     for (remI = -1, cmp = 0; ++remI < dvsL;) {
 
-                    for (remI = -1, cmp = 0; ++remI < dvsL;) {
+                         if (dvs[remI] != rem[remI]) {
+                             if(rem[remI] != 0xFF)
+                                 cmp = dvs[remI] > rem[remI] ? 1 : -1;
+                             else
+                                 cmp = -1
+                             break;
+                         }
+                     }
+                 }
 
-                        if (dvs[remI] != rem[remI]) {
-                            cmp = dvs[remI] > rem[remI] ? 1 : -1;
-                            break;
-                        }
-                    }
-                }
+                 // If divisor < remainder, subtract divisor from remainder.
+                 if (cmp < 0) {
 
-                // If divisor < remainder, subtract divisor from remainder.
-                if (cmp < 0) {
+                     // Remainder can't be more than 1 digit longer than divisor.
+                     // Equalise lengths using divisor with extra leading zero
+                     for (dvsT = remL == dvsL ? dvs : dvsZ; remL > 0;) {
 
-                    // Remainder can't be more than 1 digit longer than divisor.
-                    // Equalise lengths using divisor with extra leading zero
-                    for (dvsT = remL == dvsL ? dvs : dvsZ; remL > 0;) {
+                         if (remL == 0 || (rem[--remL] != 0xFF && rem[remL] < dvsT[remL])) {
+                             remI = remL;
 
-                        if (remL == 0 || rem[--remL] < dvsT[remL]) {
-                            remI = remL;
+                             for (; remI && !rem[--remI] && rem[remI] != 0xFF; rem[remI] = 9) {
+                             }
+                             --rem[remI];
+                             rem[remL] == 0xFF ? rem[remL] = 10 : rem[remL] += 10;
+                         }
+                         rem[remL] -= dvsT[remL];
+                     }
+                     for (; !rem[0] || rem[0] == 0xFF; rem = _slice(rem, 1)) {
+                     }
+                 } else {
+                     break;
+                 }
+             }
 
-                            for (; remI && !rem[--remI]; rem[remI] = 9) {
-                            }
-                            --rem[remI];
-                            rem[remL] == null ? rem[remL] = 10 : rem[remL] += 10;
-                        }
-                        rem[remL] -= dvsT[remL];
-                    }
-                    for (; !rem[0]; rem.remove(0)) {
-                    }
-                } else {
-                    break;
-                }
-            }
+             // Add the 'next' digit to the result array.
+             _resize(qc, qc.len()+1)
+             qc[qc.len()-1] = cmp ? next : ++next;
+             qi++
 
-            // Add the 'next' digit to the result array.
-            qc.push(cmp ? next : ++next);
-            qi++
+             // Update the remainder.
+             if (rem[0] && rem[0] != 0xFF && cmp) {
+                 _resize(rem, rem.len()+1)
+                 rem[rem.len()-1] = dvdI < dvd.len() ? dvd[dvdI] : 0; //TODO: BUG: There are probably a lot of if statements that we need to update
+             } else {
+                 rem = blob(1)
+                 rem[0] = dvdI < dvd.len() ? dvd[dvdI] : 0xFF;
+             }
 
-            // Update the remainder.
-            if (rem[0] && cmp) {
-                rem.push(dvdI < dvd.len() ? dvd[dvdI] : null);
-            } else {
-                rem = [ dvdI < dvd.len() ? dvd[dvdI] : null  ];
-            }
+         } while ((dvdI++ < dvdL || rem[0] != 0xFF) && s--);
 
-        } while ((dvdI++ < dvdL || rem[0] != null) && s--);
+         // Leading zero? Do not remove if result is simply zero (qi == 1).
+         if (!qc[0] && qi != 1) {
 
-        // Leading zero? Do not remove if result is simply zero (qi == 1).
-        if (!qc[0] && qi != 1) {
+             // There can't be more than one zero.
+             _remove(qc, 0);
+             q.e--;
+         }
 
-            // There can't be more than one zero.
-            qc.remove(0);
-            q.e--;
-        }
+         // Round?
+         if (qi > digits) {
+             q.rnd(dp, this.RM, rem[0] != 0xFF);
+         }
 
-        // Round?
-        if (qi > digits) {
-            q.rnd(dp, this.RM, rem[0] != null);
-        }
-
-        return q;
-    };
+         return q;
+     };
 
 
 
@@ -642,10 +647,12 @@ class Big {
                 t = yc;
             }
 
-            t.reverse();
-            for (b = a; b--; t.push(0)) {
+            _reverse(t);
+            for (b = a; b--;) {
+              _resize(t, t.len()+1)
+              //t[t.len()-1] = 0
             }
-            t.reverse();
+            _reverse(t);
         } else {
 
             // Exponents equal. Check digit by digit.
@@ -680,7 +687,8 @@ class Big {
         if (b > 0) {
 
             for (; b--; i++) {
-                xc.push(0)
+                _resize(xc, xc.len()+1)
+                //xc[xc.len()-1] = 0
             }
         }
 
@@ -698,13 +706,13 @@ class Big {
         }
 
         // Remove trailing zeros.
-        for (; b > 0 && xc[--b] == 0; xc.pop()) {
+        for (; b > 0 && xc[--b] == 0; _resize(xc, xc.len()-1)) {
         }
 
 
         // Remove leading zeros and adjust exponent accordingly.
         for (; xc.len() > 0 && xc[0] == 0;) {
-            xc.remove(0);
+            xc = _slice(xc, 1)
             --ye;
         }
 
@@ -715,7 +723,7 @@ class Big {
 
             // Result must be zero.
             ye = 0
-            xc = [0];
+            xc = blob(1);
         }
 
         y.c = xc;
@@ -804,10 +812,12 @@ class Big {
                 t = xc;
             }
 
-            t.reverse();
-            for (; a--; t.push(0)) {
+            _reverse(t);
+            while(a--){
+              _resize(t, t.len()+1)
+              //t[t.len()-1] = 0
             }
-            t.reverse();
+            _reverse(t);
         }
 
         // Point xc to the longer array.
@@ -831,12 +841,12 @@ class Big {
         // No need to check for zero, as +x + +y != 0 && -x + -y != 0
 
         if (b) {
-             xc.insert(0,b);
+             _insert(xc, 0,b);
             ++ye;
         }
 
          // Remove trailing zeros.
-        for (a = xc.len(); a > 0 && xc[--a] == 0; xc.pop()) {
+        for (a = xc.len(); a > 0 && xc[--a] == 0; _resize(xc, xc.len()-1)) {
         }
 
         y.c = xc;
@@ -939,9 +949,7 @@ class Big {
 //         // // Math.sqrt underflow/overflow?
 //         // // Pass x to Math.sqrt as integer, then adjust the result exponent.
 //         // if (i == 0 || i.tointeger() == -2147483648 || i.tointeger() == 2147483648 ) {
-//             estimate = xc.reduce(function(previousValue, currentValue){
-//                 return (previousValue.tostring() + currentValue.tostring());
-//             }).tostring()
+//             estimate = _reduce(xc)
 
 //             if (!(estimate.len() + e & 1)) {
 //                 estimate += "0";
@@ -976,15 +984,11 @@ class Big {
 //             server.log(approx.toString())
 //             server.log(r.toString())
 //         } while (
-//             approx.c.slice(0,  i-1 >= approx.c.len() ? approx.c.len() : i-1).reduce(function(previousValue, currentValue){
-//                 return (previousValue.tostring() + currentValue.tostring());
-//             }).tostring()
+//             _reduce(approx.c.slice(0,  i-1 >= approx.c.len() ? approx.c.len() : i-1))
 
 //             !=
 
-//             r.c.slice(0, i-1 >= r.c.len() ? r.c.len() : i-1).reduce(function(previousValue, currentValue){
-//                 return (previousValue.tostring() + currentValue.tostring());
-//             }).tostring()
+//             _reduce(r.c.slice(0, i-1 >= r.c.len() ? r.c.len() : i-1))
 //         );
 
 //         this.DP -= 4
@@ -1031,7 +1035,7 @@ class Big {
         }
 
         // Initialise coefficient array of result with zeros.
-        c = array(a + b, 0);
+        c = blob(a + b);
 
         // Multiply.
 
@@ -1059,11 +1063,11 @@ class Big {
 
         // Remove any leading zero.
         if (!c[0]) {
-            c.remove(0);
+            c = _slice(c, 1)
         }
 
         // Remove trailing zeros.
-        for (i = c.len(); !c[--i]; c.pop()) {
+        for (i = c.len(); !c[--i]; _resize(c, c.len()-1)) {
         }
         y.c = c;
 
@@ -1080,9 +1084,7 @@ class Big {
        //TODO: map .valueOf and .toJSON into this...
     function toString() {
            local e = this.e;
-           local str = this.c.reduce(function(previousValue, currentValue){
-                             return (previousValue.tostring() + currentValue.tostring());
-                         }).tostring();
+           local str = _reduce(this.c)
            local strL = str.len();
 
            // Exponential notation?
@@ -1204,6 +1206,101 @@ class Big {
         return this.format(sd - 1, 2);
     };
 
+    /**
+     * Used with JSONEncoder.encode to allow for properly JSONizing big numbers
+     * @method _serialize
+     * @return {[type]}   [description]
+     */
+     function _serializeRaw(){
+         return this.toString();
+     }
+
+
+      /**
+       * reduce our coefficient blob into a string
+       * @method _reduce
+       * @param  {[type]} c [description]
+       * @return {[type]}   [description]
+       */
+      function _reduce(bl){
+        local str = ""
+        for(local i=0; i<bl.len(); i++){
+          str += bl[i].tostring()
+        }
+        return str;
+      }
+
+      // This will reverse the actual blob, not simply return a new one
+      function _reverse(bl) {
+        local tempbl = clone(bl)
+        for(local i=0, j=bl.len()-1; i<bl.len(); i++, j--){
+          tempbl[j] = bl[i]          //reverse the data
+        }
+        for(local i=0; i<bl.len(); i++)
+          bl[i] = tempbl[i]
+
+        return bl
+      }
+
+      // This will resize the actual blob, not simply return a new one
+      function _resize(bl, len){ //The native squirrel resize doesn't actually change our length, just the blob's memory allocation so we get silly index out of range errors if we use it
+        bl.resize(len)  //truncate the blob if necessary.  This possible fragments our memory more than needed but shouldn't be an issue in practice?
+        bl.seek(bl.len())
+        for(local i=bl.len(); i<len; i++)
+          bl.writen(0, 'b')
+        bl.seek(0)
+        return bl
+      }
+
+      function _remove(bl, index){  //TODO: BUG: No protections in place for legal values of index...
+        index++
+        for(; index < bl.len(); index++)
+            bl[index-1] = bl[index]
+        bl.resize(bl.len()-1)
+        return bl
+      }
+
+
+      function _insert(bl, index, item){
+        _resize(bl, bl.len() + 1);
+
+        //shift everything to the right by one index
+        for(local i=bl.len()-2; i>=index; i--){
+          bl[i+1] = bl[i]
+        }
+
+        //insert our item
+        bl[index] = item
+      }
+
+      // This will return a new sliced blob
+      function _slice(bl, startIndex, endIndex=null){
+          endIndex = endIndex == null ? bl.len() : endIndex
+
+          //TODO: I'm not sure that this is a one to one equivalent, but its a decent start
+
+          if(math.abs(startIndex) > bl.len() || math.abs(endIndex) > bl.len()){
+              throw("slice out of range")
+          }
+
+          if(startIndex < 0)
+              startIndex = bl.len() + startIndex
+
+          if(endIndex < 0)
+              endIndex = bl.len() + endIndex
+
+          if(startIndex > endIndex)
+              throw("wrong indexes")
+
+
+          local tempbl = blob(endIndex - startIndex);
+
+          for(local i=startIndex; i < endIndex; i++)
+              tempbl[i - startIndex] = bl[i]
+
+          return tempbl
+      }
+
 }
 
 
@@ -1227,7 +1324,7 @@ function BigFromHexString(str){
 
         if( '0' <= hex && hex <= '9'){
             int = (hex - 0x30)
-        } else if( 'a' < hex && hex <= 'f' ){
+        } else if( 'a' <= hex && hex <= 'f' ){
             int = (hex - 0x57)
         } else{
             throw "Invalid Hex Character: " + hex;
@@ -1237,6 +1334,17 @@ function BigFromHexString(str){
     }
     return bi
 }
+
+function BigFromUINTBlob(bl){
+  local str = ""
+  for(local i = 0; i < bl.len(); i++){
+    str = str + format("%.2X", bl[i]);
+  }
+
+  return BigFromHexString(str)  //TODO: BUG: This isn't working - probably an endianess thing?
+}
+
+
 
 /*//1450489318530 = 151B7E68C82
 local num = BigFromHexString("151B7E68C82");
